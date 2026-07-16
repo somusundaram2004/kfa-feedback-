@@ -15,6 +15,7 @@ class FeedbackViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         import logging
+        import traceback
         logger = logging.getLogger(__name__)
 
         # Log incoming request data
@@ -22,17 +23,32 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         print(f"Request Data: {request.data}")
         logger.info(f"Request Data: {request.data}")
 
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            self.perform_create(serializer)
-            print(f"Validated Data: {serializer.validated_data}")
-            logger.info(f"Validated Data: {serializer.validated_data}")
-            return Response(serializer.data, status=201)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            if serializer.is_valid():
+                self.perform_create(serializer)
+                print(f"Validated Data: {serializer.validated_data}")
+                logger.info(f"Validated Data: {serializer.validated_data}")
+                return Response(serializer.data, status=201)
 
-        # Log validation errors
-        print(f"Serializer Errors: {serializer.errors}")
-        logger.error(f"Serializer Errors: {serializer.errors}")
-        return Response(serializer.errors, status=400)
+            # Log validation errors
+            print(f"Serializer Errors: {serializer.errors}")
+            logger.error(f"Serializer Errors: {serializer.errors}")
+            return Response({
+                "success": False,
+                "message": "Validation Failed",
+                "errors": serializer.errors
+            }, status=400)
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"UNEXPECTED EXCEPTION:\n{tb}")
+            logger.error(f"UNEXPECTED EXCEPTION: {e}", exc_info=True)
+            return Response({
+                "success": False,
+                "message": "An unexpected server error occurred.",
+                "errors": {"server": [str(e)]}
+            }, status=500)
 
     def get_queryset(self):
         # Only auto-populate with initial mock data ONCE at server startup if empty
