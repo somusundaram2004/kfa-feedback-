@@ -186,6 +186,57 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   LANGUAGE TOGGLE BUTTON
+───────────────────────────────────────────────────────────── */
+.lang-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 22px;
+  border: 1.5px solid var(--kfa-navy);
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(10px);
+  color: var(--kfa-navy);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(26,26,140,0.10);
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+}
+
+.lang-toggle-btn:hover {
+  background: linear-gradient(135deg, var(--kfa-navy), var(--kfa-royal-mid));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(26,26,140,0.28);
+  transform: translateY(-1px);
+}
+
+.lang-toggle-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(26,26,140,0.15);
+}
+
+.lang-toggle-icon {
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.3s ease;
+}
+
+.lang-toggle-btn:hover .lang-toggle-icon {
+  transform: rotate(20deg);
+}
+
+.lang-toggle-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
    ANIMATIONS
 ───────────────────────────────────────────────────────────── */
 .page-fade-in { animation: fadeSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
