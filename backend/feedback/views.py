@@ -13,6 +13,27 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     _has_checked_initial = False
 
+    def create(self, request, *args, **kwargs):
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Log incoming request data
+        print("--- POST /api/feedbacks/ ---")
+        print(f"Request Data: {request.data}")
+        logger.info(f"Request Data: {request.data}")
+
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            print(f"Validated Data: {serializer.validated_data}")
+            logger.info(f"Validated Data: {serializer.validated_data}")
+            return Response(serializer.data, status=201)
+
+        # Log validation errors
+        print(f"Serializer Errors: {serializer.errors}")
+        logger.error(f"Serializer Errors: {serializer.errors}")
+        return Response(serializer.errors, status=400)
+
     def get_queryset(self):
         # Only auto-populate with initial mock data ONCE at server startup if empty
         if not FeedbackViewSet._has_checked_initial:

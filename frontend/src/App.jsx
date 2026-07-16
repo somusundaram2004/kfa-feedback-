@@ -247,7 +247,36 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Server error');
+      if (!res.ok) {
+        let errorData;
+        try {
+          errorData = await res.json();
+        } catch {
+          throw new Error('Server returned non-JSON error');
+        }
+        
+        let message = "Could not submit feedback. Please correct the following errors:\n\n";
+        Object.entries(errorData).forEach(([field, errList]) => {
+          const errorsText = Array.isArray(errList) ? errList.join(', ') : String(errList);
+          let friendlyField = field;
+          if (field === 'studentName' || field === 'student_name') friendlyField = "Student Name";
+          else if (field === 'branch') friendlyField = "Branch";
+          else if (field === 'starRating' || field === 'star_rating') friendlyField = "Star Rating";
+          else if (field === 'feedbackCategory' || field === 'feedback_category') friendlyField = "Feedback Category";
+          else if (field === 'mainFeedback' || field === 'main_feedback') friendlyField = "Feedback Explanation";
+          else if (field === 'improvementAreas' || field === 'improvement_areas') friendlyField = "Improvements";
+          else if (field === 'expectations') friendlyField = "Expectations";
+          else if (field === 'recommend') friendlyField = "Recommend";
+          else if (field === 'contactPreference' || field === 'contact_preference') friendlyField = "Contact Preference";
+          else if (field === 'phoneNumber' || field === 'phone_number') friendlyField = "Phone Number";
+          else if (field === 'preferredContactMethod' || field === 'preferred_contact_method') friendlyField = "Preferred Contact Method";
+          else if (field === 'learningProgress' || field === 'learning_progress') friendlyField = "Learning Progress";
+
+          message += `• ${friendlyField}: ${errorsText}\n`;
+        });
+        alert(message);
+        return;
+      }
       const data = await res.json();
       setGeneratedId(data.feedbackId || `KFA-${new Date().getFullYear()}-${String(data.id || '').replace('fb-', '').padStart(6, '0')}`);
       localStorage.removeItem(SAVE_KEY);

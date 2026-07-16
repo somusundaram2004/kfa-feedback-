@@ -42,6 +42,10 @@ DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
 CSRF_TRUSTED_ORIGINS = [
     "https://feedback-system-7ocst4g3a-jeffersonsamuel003-3850s-projects.vercel.app",
+    "https://kfa-feedback.vercel.app",
+    "https://kfa-feedback.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 # ALLOWED_HOSTS configuration
 allowed_hosts_env = os.getenv("ALLOWED_HOSTS")
@@ -103,7 +107,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 
 # Database configuration
-# Configure PostgreSQL using DATABASE_URL in production, otherwise fall back to environment variables or local development values
+# Configure PostgreSQL using environment variables, falling back to local PostgreSQL development defaults
+DB_NAME = os.getenv('DB_NAME', 'feedback_system')
+DB_USER = os.getenv('DB_USER', 'postgres')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'admin123')
+DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_PORT = os.getenv('DB_PORT', '5432')
+
 database_url = os.getenv('DATABASE_URL')
 if database_url:
     DATABASES = {
@@ -114,31 +124,16 @@ if database_url:
         )
     }
 else:
-    # Use SQLite as local development database fallback if no PostgreSQL configuration is supplied in env
-    DB_NAME = os.getenv('DB_NAME')
-    if not DB_NAME:
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
         }
-    else:
-        DB_USER = os.getenv('DB_USER', 'postgres')
-        DB_PASSWORD = os.getenv('DB_PASSWORD', 'admin123')
-        DB_HOST = os.getenv('DB_HOST', 'localhost')
-        DB_PORT = os.getenv('DB_PORT', '5432')
-
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': DB_NAME,
-                'USER': DB_USER,
-                'PASSWORD': DB_PASSWORD,
-                'HOST': DB_HOST,
-                'PORT': DB_PORT,
-            }
-        }
+    }
 
 
 # Password validation
