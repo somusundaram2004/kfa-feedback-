@@ -1,586 +1,500 @@
 import React, { useState, useEffect } from 'react';
-import mccLogo from './assets/mcc logo .png';
-import html2pdf from 'html2pdf.js';
+import kfaLogo from './assets/Logofull.png';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const problemOptions = [
-  "Infrastructure (classroom, lab, hostel, washroom, etc.)",
-  "Internet / Wi-Fi",
-  "Food / Mess / Canteen",
-  "Safety / Security",
-  "Mental Health / Wellbeing",
-  "Administration / Paperwork",
-  "Faculty / Teaching",
-  "Other"
-];
+const CATEGORY_OPTIONS = ['Complaint', 'Suggestion', 'Improvement Idea', 'Appreciation', 'Other'];
+const BRANCH_OPTIONS   = ['Guduvancheri', 'Madambakkam'];
+const STATUS_OPTIONS   = ['New', 'In Review', 'Resolved'];
+const RATING_OPTIONS   = ['1', '2', '3', '4', '5'];
 
 const isToday = (dateString) => {
   const d = new Date(dateString);
-  const today = new Date();
-  return d.getDate() === today.getDate() &&
-    d.getMonth() === today.getMonth() &&
-    d.getFullYear() === today.getFullYear();
+  const t = new Date();
+  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
+};
+
+const getCategoryBadgeClass = (cat) => {
+  if (!cat) return 'cat-other';
+  const c = cat.toLowerCase();
+  if (c.includes('complaint'))    return 'cat-complaint';
+  if (c.includes('suggestion'))   return 'cat-suggestion';
+  if (c.includes('improvement'))  return 'cat-improvement';
+  if (c.includes('appreciation')) return 'cat-appreciation';
+  return 'cat-other';
+};
+
+const getStatusBadgeClass = (status) => {
+  if (!status) return 'status-new';
+  const s = status.toLowerCase();
+  if (s.includes('review'))   return 'status-in-review';
+  if (s.includes('resolved')) return 'status-resolved';
+  return 'status-new';
+};
+
+const renderStars = (rating) => {
+  if (!rating) return '—';
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating);
+};
+
+const getCategoryIcon = (cat) => {
+  if (!cat) return '✉️';
+  const c = cat.toLowerCase();
+  if (c.includes('complaint'))    return '😟';
+  if (c.includes('suggestion'))   return '💡';
+  if (c.includes('improvement'))  return '🔧';
+  if (c.includes('appreciation')) return '❤️';
+  return '✉️';
 };
 
 function Admin() {
-  const [feedbacks, setFeedbacks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [deletingId, setDeletingId] = useState(null);
-  const [deleteTimeoutId, setDeleteTimeoutId] = useState(null);
+  const [feedbacks, setFeedbacks]               = useState([]);
+  const [loading, setLoading]                   = useState(true);
   const [selectedFeedback, setSelectedFeedback] = useState(null);
+  const [deletingId, setDeletingId]             = useState(null);
+  const [deleteTimeoutId, setDeleteTimeoutId]   = useState(null);
 
-  // Security check on mount
+  // Filters
+  const [searchQuery,     setSearchQuery]     = useState('');
+  const [branchFilter,    setBranchFilter]    = useState('All');
+  const [categoryFilter,  setCategoryFilter]  = useState('All');
+  const [statusFilter,    setStatusFilter]    = useState('All');
+  const [ratingFilter,    setRatingFilter]    = useState('All');
+
+  // ── Auth check ───────────────────────────────────────────────────────
   useEffect(() => {
     const isAuth = sessionStorage.getItem('isAdminAuthenticated') === 'true';
-    if (!isAuth) {
-      window.location.href = '/';
-      return;
-    }
+    if (!isAuth) { window.location.href = '/'; return; }
 
-    // Load feedbacks on mount
     fetch(`${API_BASE_URL}/api/feedbacks/`)
-      .then(res => {
-        if (!res.ok) throw new Error("Could not fetch feedbacks");
-        return res.json();
-      })
-      .then(data => {
-        setFeedbacks(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Error loading feedbacks:", err);
-        setLoading(false);
-      });
+      .then(r => { if (!r.ok) throw new Error('Could not fetch'); return r.json(); })
+      .then(data => { setFeedbacks(data); setLoading(false); })
+      .catch(err => { console.error(err); setLoading(false); });
   }, []);
 
-  // Calculate Metrics
-  const totalResponses = feedbacks.length;
-  const todayResponses = feedbacks.filter(item => isToday(item.timestamp)).length;
-  const uniqueDepartmentsCount = new Set(feedbacks.map(item => item.department).filter(d => d && d !== 'N/A')).size;
+  // ── Metrics ────────────────────────────────────────────────────────
+  const total        = feedbacks.length;
+  const todayCount   = feedbacks.filter(f => isToday(f.timestamp)).length;
+  const avgRating    = feedbacks.length
+    ? (feedbacks.reduce((s, f) => s + (f.starRating || 0), 0) / feedbacks.length).toFixed(1)
+    : '—';
+  const newCount     = feedbacks.filter(f => (f.status || '').toLowerCase() === 'new').length;
+  const reviewCount  = feedbacks.filter(f => (f.status || '').toLowerCase().includes('review')).length;
+  const resolvedCount= feedbacks.filter(f => (f.status || '').toLowerCase() === 'resolved').length;
+  const complaintCount    = feedbacks.filter(f => (f.feedbackCategory || '').toLowerCase().includes('complaint')).length;
+  const suggestionCount   = feedbacks.filter(f => (f.feedbackCategory || '').toLowerCase().includes('suggestion')).length;
+  const appreciationCount = feedbacks.filter(f => (f.feedbackCategory || '').toLowerCase().includes('appreciation')).length;
 
-  const categoryCounts = problemOptions.reduce((acc, cat) => {
-    acc[cat] = feedbacks.filter(item => item.problems.includes(cat)).length;
+  // Category breakdown
+  const catCounts = CATEGORY_OPTIONS.reduce((acc, cat) => {
+    acc[cat] = feedbacks.filter(f =>
+      (f.feedbackCategory || f.problems?.[0] || '').toLowerCase().includes(cat.toLowerCase())
+    ).length;
     return acc;
   }, {});
-  const maxCategoryCount = Math.max(...Object.values(categoryCounts), 1);
+  const maxCat = Math.max(...Object.values(catCounts), 1);
 
-  const filteredFeedbacks = feedbacks.filter(item => {
-    const matchesCategory = categoryFilter === 'All' || item.problems.includes(categoryFilter);
-    const matchesSearch = item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.problems.some(p => p.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesCategory && matchesSearch;
+  // Branch breakdown
+  const branchCounts = BRANCH_OPTIONS.reduce((acc, b) => {
+    acc[b] = feedbacks.filter(f => (f.branch || f.department || '') === b).length;
+    return acc;
+  }, {});
+  const maxBranch = Math.max(...Object.values(branchCounts), 1);
+
+  // ── Filtered list ────────────────────────────────────────────────────
+  const filtered = feedbacks.filter(f => {
+    const cat     = (f.feedbackCategory || f.problems?.[0] || '').toLowerCase();
+    const branch  = (f.branch || f.department || '').toLowerCase();
+    const status  = (f.status || '').toLowerCase();
+    const rating  = String(f.starRating || '');
+    const text    = `${f.studentName || f.name || ''} ${f.mainFeedback || f.description || ''} ${f.feedbackId || f.id || ''}`.toLowerCase();
+
+    if (categoryFilter !== 'All' && !cat.includes(categoryFilter.toLowerCase())) return false;
+    if (branchFilter   !== 'All' && !branch.includes(branchFilter.toLowerCase())) return false;
+    if (statusFilter   !== 'All' && !status.includes(statusFilter.toLowerCase())) return false;
+    if (ratingFilter   !== 'All' && rating !== ratingFilter) return false;
+    if (searchQuery && !text.includes(searchQuery.toLowerCase())) return false;
+    return true;
   });
 
+  // ── Delete ────────────────────────────────────────────────────────────
   const deleteFeedback = (id) => {
     if (deletingId === id) {
-      if (deleteTimeoutId) {
-        clearTimeout(deleteTimeoutId);
-        setDeleteTimeoutId(null);
-      }
+      clearTimeout(deleteTimeoutId);
       setDeletingId(null);
-
-      const dbId = typeof id === 'string' && id.startsWith('fb-') ? id.replace('fb-', '') : id;
-      fetch(`${API_BASE_URL}/api/feedbacks/${dbId}/`, {
-        method: 'DELETE'
-      })
-        .then(res => {
-          if (!res.ok) throw new Error("Server error");
-          setFeedbacks(feedbacks.filter(item => item.id !== id));
-        })
-        .catch(err => console.error("Error deleting feedback:", err));
+      const dbId = String(id).replace('fb-', '');
+      fetch(`${API_BASE_URL}/api/feedbacks/${dbId}/`, { method: 'DELETE' })
+        .then(r => { if (!r.ok) throw new Error(); setFeedbacks(prev => prev.filter(f => f.id !== id)); })
+        .catch(console.error);
     } else {
-      if (deleteTimeoutId) {
-        clearTimeout(deleteTimeoutId);
-      }
+      if (deleteTimeoutId) clearTimeout(deleteTimeoutId);
       setDeletingId(id);
-      const tId = setTimeout(() => {
-        setDeletingId(null);
-      }, 3000);
-      setDeleteTimeoutId(tId);
+      setDeleteTimeoutId(setTimeout(() => setDeletingId(null), 3000));
     }
   };
 
   const resetDatabase = () => {
-    if (window.confirm("Reset dashboard data back to initial mock responses?")) {
-      fetch(`${API_BASE_URL}/api/feedbacks/reset/`, {
-        method: 'POST',
-      })
-        .then(res => {
-          if (!res.ok) throw new Error("Server error");
-          return res.json();
-        })
-        .then(data => {
-          setFeedbacks(data);
-          alert("Database reset successfully.");
-        })
-        .catch(err => console.error("Error resetting database:", err));
-    }
+    if (!window.confirm('Reset dashboard data back to initial KFA sample responses?')) return;
+    fetch(`${API_BASE_URL}/api/feedbacks/reset/`, { method: 'POST' })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(data => { setFeedbacks(data); alert('Database reset successfully.'); })
+      .catch(console.error);
   };
 
-  const downloadResponsePDF = (item) => {
-    generatePDFDirectly(item);
-  };
+  const handleLogout = () => { sessionStorage.removeItem('isAdminAuthenticated'); window.location.href = '/'; };
+  const clearFilters = () => { setBranchFilter('All'); setCategoryFilter('All'); setStatusFilter('All'); setRatingFilter('All'); setSearchQuery(''); };
+  const hasFilters = branchFilter !== 'All' || categoryFilter !== 'All' || statusFilter !== 'All' || ratingFilter !== 'All' || searchQuery;
 
-  const generatePDFDirectly = (item) => {
-    const formattedProblems = Array.isArray(item.problems) ? item.problems.join(', ') : item.problems;
-    const formattedToolTypes = Array.isArray(item.digitalToolTypes) ? item.digitalToolTypes.join(', ') : item.digitalToolTypes;
-
-    // Create container element styled specifically for A4 layout rendering
-    const tempDiv = document.createElement('div');
-    tempDiv.style.position = 'fixed';
-    tempDiv.style.left = '0';
-    tempDiv.style.top = '0';
-    tempDiv.style.zIndex = '-9999'; // Places it underneath everything so the user doesn't see it
-    tempDiv.style.pointerEvents = 'none'; // Avoid block clicks
-
-    tempDiv.innerHTML = `
-      <div style="font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #334155; line-height: 1.5; font-size: 13px; width: 790px; box-sizing: border-box; padding: 24px; background: #ffffff;">
-        <!-- Header -->
-        <div style="display: flex; justify-content: center; align-items: center; padding: 18px 20px; background-color: #eef2ff; border-radius: 18px; margin-bottom: 24px; border: 1px solid #dbeafe; position: relative;">
-          <div style="display: flex; align-items: center; gap: 14px; justify-content: center; text-align: center;">
-            <img src="${mccLogo}" alt="MCC Logo" style="width: 78px; height: auto; object-fit: contain;" />
-            <div style="display: flex; flex-direction: column; font-family: 'Times New Roman', Times, serif; color: #0f2d59; align-items: center;">
-              <span style="font-size: 20px; font-weight: 700; line-height: 1.1;">Madras Christian College</span>
-              <span style="font-size: 14px; color: #475569; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; margin-top: 4px;">Review Report</span>
-              <span style="font-size: 11px; color: #475569; margin-top: 6px;">Individual Submitter Q&amp;A Summary</span>
-            </div>
-          </div>
-          <div style="position: absolute; right: 18px; background-color: #ffffff; border: 1px solid #cbd5e1; color: #0f2d59; padding: 6px 14px; border-radius: 6px; font-family: monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; white-space: nowrap;">
-            ${item.id}
-          </div>
-        </div>
-
-        <!-- Meta Grid -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #f8fafc; padding: 14px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #cbd5e1;">
-          <div style="font-size: 12px; color: #475569;"><strong>Submitter Name:</strong> <span style="color: #0f2d59; font-weight: 600;">${item.name || 'Anonymous'}</span></div>
-          <div style="font-size: 12px; color: #475569;"><strong>Department/Branch:</strong> <span style="color: #0f2d59; font-weight: 600;">${item.department || 'N/A'}</span></div>
-          <div style="font-size: 12px; color: #475569; grid-column: span 2;"><strong>Submission Date:</strong> <span style="color: #0f2d59; font-weight: 600;">${new Date(item.timestamp).toLocaleString()}</span></div>
-        </div>
-
-        <!-- Details Table -->
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
-          <thead>
-            <tr style="background-color: #f1f5f9;">
-              <th style="text-align: left; padding: 10px 12px; color: #0f2d59; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; font-size: 11px; border-bottom: 1.5px solid #cbd5e1; border-right: 1px solid #cbd5e1; width: 45%;">Question</th>
-              <th style="text-align: left; padding: 10px 12px; color: #0f2d59; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; font-size: 11px; border-bottom: 1.5px solid #cbd5e1; width: 55%;">Answer</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style="border-bottom: 1px solid #cbd5e1;">
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">1</span> What type of problem is this?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${formattedProblems || 'None selected'}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #cbd5e1;">
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">2</span> How often does this problem occur?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${item.frequency}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #cbd5e1;">
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">3</span> Who is most affected by it?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${item.affected}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #cbd5e1;">
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">4</span> Could a digital tool help solve it?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${item.digitalToolHelp}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #cbd5e1;">
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">5</span> What kind of digital tool would help?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${formattedToolTypes || 'None selected'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px 12px; vertical-align: top; border-right: 1px solid #cbd5e1; font-weight: 500;"><span style="background: #0f2d59; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-right: 8px;">6</span> Who would use this solution?</td>
-              <td style="padding: 10px 12px; vertical-align: top; color: #1e293b; font-weight: 500;">${item.userGroup}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Description Box -->
-        <div style="background: #f8fafc; border-left: 4px solid #0f2d59; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 20px; border-top: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;">
-          <div style="font-size: 12px; font-weight: 700; color: #0f2d59; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Question 7: Description of the Problem</div>
-          <div style="font-size: 12px; color: #1e293b; white-space: pre-wrap; line-height: 1.5;">${item.description}</div>
-        </div>
-
-        <!-- Footer -->
-        <div style="margin-top: 32px; text-align: center; font-size: 10px; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 12px;">
-          Generated automatically by Review Hub Solutions System on ${new Date().toLocaleDateString()}
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(tempDiv);
-
-    const pdfOptions = {
-      margin: 12,
-      filename: `Review_Report_${item.id}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2.5, useCORS: true, letterRendering: true, windowWidth: 790 },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    html2pdf()
-      .from(tempDiv.firstElementChild)
-      .set(pdfOptions)
-      .save()
-      .then(() => {
-        document.body.removeChild(tempDiv);
-        alert(`Report ${item.id} downloaded successfully!`);
-      })
-      .catch((err) => {
-        console.error("PDF download failed: ", err);
-        document.body.removeChild(tempDiv);
-      });
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('isAdminAuthenticated');
-    window.location.href = '/';
-  };
-
+  // ── Loading ────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="loading-container" style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.06), transparent), #f4f6fb',
-        color: '#1e293b',
-        fontFamily: "'Plus Jakarta Sans', 'Outfit', sans-serif"
-      }}>
-        <div style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '16px',
-          background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: '24px',
-          boxShadow: '0 8px 24px rgba(99, 102, 241, 0.2)',
-          animation: 'pulse 2s ease-in-out infinite'
-        }}>
-          <img src={mccLogo} alt="MCC Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+      <div className="loading-container">
+        <div className="loading-logo-pulse">
+          <img src={kfaLogo} alt="KFA Logo" style={{ width: 50, objectFit: 'contain' }} />
         </div>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.3px', marginBottom: '6px' }}>Review Hub</h2>
-        <p style={{ color: '#64748b', marginTop: '4px', fontSize: '0.9rem' }}>Connecting to database...</p>
+        <h2 style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, color: '#1a1a8c', fontSize: 22, marginBottom: 6 }}>
+          KFA Music Academy
+        </h2>
+        <p style={{ color: '#8585a0', fontSize: 14 }}>Loading feedback data…</p>
       </div>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════
   return (
     <div className="app-container">
-      {/* App Header */}
+      {/* Header */}
       <header className="app-header">
-        <div className="logo-section" style={{ userSelect: 'none' }}>
-          <div className="logo-icon" style={{ background: 'none', boxShadow: 'none', overflow: 'visible' }}>
-            <img src={mccLogo} alt="MCC Logo" style={{ width: '42px', height: '42px', objectFit: 'contain' }} />
+        <div className="logo-section" style={{ cursor: 'default' }}>
+          <div className="logo-icon">
+            <img src={kfaLogo} alt="KFA Logo" style={{ width: 44, height: 44, objectFit: 'contain' }} />
           </div>
           <div className="logo-text">
-            <h1>Review Hub</h1>
-            <p>Feedback & Digital Solution System</p>
+            <h1>KFA Music Academy</h1>
+            <p>Parent Feedback Dashboard</p>
           </div>
         </div>
-
         <nav className="nav-tabs">
-          <button
-            className="nav-tab"
-            onClick={() => { window.location.href = '/'; }}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
+          <button className="nav-tab" onClick={() => window.location.href = '/'}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
+              <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
             </svg>
-            Go to Submit Form
+            Feedback Form
           </button>
-          <button
-            className="nav-tab active"
-            onClick={handleLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
+          <button className="nav-tab active" onClick={handleLogout}>
             🔒 Log Out
           </button>
         </nav>
       </header>
 
-      {/* Main Pages */}
-      <main className="page-fade-in">
-        <div className="admin-page page-fade-in">
-          {/* Admin Section Hero */}
-          <div className="admin-section-hero">
-            <div>
-              <h2>Admin Analytics Dashboard</h2>
-              <p>Review community feedback, prioritize issues, and deploy digital solutions.</p>
+      <main className="page-fade-in" style={{ paddingTop: 28 }}>
+        <div className="admin-page">
+
+          {/* Hero */}
+          <div className="admin-hero">
+            <div className="admin-hero-left">
+              <h2>KFA Parent Feedback Dashboard</h2>
+              <p>Review complaints, suggestions, and appreciate from parents. Manage and resolve feedback efficiently.</p>
+            </div>
+            <div className="admin-hero-logo">
+              <img src={kfaLogo} alt="KFA Logo" style={{ width: 56, objectFit: 'contain' }} />
             </div>
           </div>
-          {/* Top Metrics Row */}
+
+          {/* Metric Cards */}
           <div className="metrics-row">
             <div className="metric-card">
               <div>
-                <div className="metric-label">Total Responses</div>
-                <div className="metric-value">{totalResponses}</div>
-                <div className="metric-change">All logs accumulated</div>
+                <div className="metric-label">Total Feedback</div>
+                <div className="metric-value">{total}</div>
+                <div className="metric-sub">All time</div>
               </div>
-              <div className="metric-icon-box">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-              </div>
+              <div className="metric-icon-box">📋</div>
             </div>
 
-            <div className="metric-card today">
+            <div className="metric-card gold-accent">
               <div>
-                <div className="metric-label">Today's Responses</div>
-                <div className="metric-value">{todayResponses}</div>
-                <div className="metric-change">
-                  {todayResponses > 0 ? `+${todayResponses} submission(s) today` : 'No submissions today'}
-                </div>
+                <div className="metric-label">Avg Star Rating</div>
+                <div className="metric-value">{avgRating}</div>
+                <div className="metric-sub">out of 5 ★</div>
               </div>
-              <div className="metric-icon-box">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-              </div>
+              <div className="metric-icon-box">⭐</div>
             </div>
 
-            <div className="metric-card solved">
+            <div className="metric-card">
               <div>
-                <div className="metric-label">Unique Departments</div>
-                <div className="metric-value">{uniqueDepartmentsCount}</div>
-                <div className="metric-change">From all feedback records</div>
+                <div className="metric-label">New</div>
+                <div className="metric-value">{newCount}</div>
+                <div className="metric-sub">Awaiting review</div>
               </div>
-              <div className="metric-icon-box" style={{ color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.05)' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
+              <div className="metric-icon-box">🆕</div>
+            </div>
+
+            <div className="metric-card gold-accent">
+              <div>
+                <div className="metric-label">In Review</div>
+                <div className="metric-value">{reviewCount}</div>
+                <div className="metric-sub">Being processed</div>
               </div>
+              <div className="metric-icon-box">🔍</div>
+            </div>
+
+            <div className="metric-card green-accent">
+              <div>
+                <div className="metric-label">Resolved</div>
+                <div className="metric-value">{resolvedCount}</div>
+                <div className="metric-sub">Closed</div>
+              </div>
+              <div className="metric-icon-box">✅</div>
+            </div>
+
+            <div className="metric-card red-accent">
+              <div>
+                <div className="metric-label">Complaints</div>
+                <div className="metric-value">{complaintCount}</div>
+                <div className="metric-sub">Need attention</div>
+              </div>
+              <div className="metric-icon-box">😟</div>
+            </div>
+
+            <div className="metric-card">
+              <div>
+                <div className="metric-label">Suggestions</div>
+                <div className="metric-value">{suggestionCount}</div>
+                <div className="metric-sub">Improvement ideas</div>
+              </div>
+              <div className="metric-icon-box">💡</div>
+            </div>
+
+            <div className="metric-card green-accent">
+              <div>
+                <div className="metric-label">Appreciations</div>
+                <div className="metric-value">{appreciationCount}</div>
+                <div className="metric-sub">Positive feedback</div>
+              </div>
+              <div className="metric-icon-box">❤️</div>
             </div>
           </div>
 
-          {/* Dashboard Workspace */}
+          {/* Dashboard Grid */}
           <div className="dashboard-grid">
-            {/* Left Bar: Categories Breakdown */}
-            <div className="category-card">
-              <div className="section-header">
-                <h3>Problem Categories</h3>
-                <button className="reset-filters-btn" onClick={resetDatabase}>
-                  Reset Mocks
-                </button>
-              </div>
-              <div className="category-list">
-                {problemOptions.map(cat => {
-                  const count = categoryCounts[cat] || 0;
-                  let displayLabel = cat.split(" (")[0];
 
-                  return (
-                    <div key={cat} className="category-bar-item">
-                      <div className="category-bar-label">
-                        <span className="category-name" title={cat}>{displayLabel}</span>
-                        <span className="category-count">{count}</span>
+            {/* Left: Analytics */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+              {/* Category Breakdown */}
+              <div className="category-card">
+                <div className="section-header">
+                  <h3>📊 Feedback by Category</h3>
+                  <button className="btn-reset-db" onClick={resetDatabase}>Reset Mocks</button>
+                </div>
+                <div className="category-list">
+                  {CATEGORY_OPTIONS.map(cat => {
+                    const count = catCounts[cat] || 0;
+                    return (
+                      <div key={cat} className="category-bar-item">
+                        <div className="category-bar-label">
+                          <span className="category-name">
+                            {getCategoryIcon(cat)} {cat}
+                          </span>
+                          <span className="category-count">{count}</span>
+                        </div>
+                        <div className="progress-track-admin">
+                          <div
+                            className="progress-fill-admin"
+                            style={{ width: `${(count / maxCat) * 100}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="progress-track">
-                        <div
-                          className="progress-fill"
-                          style={{
-                            width: `${(count / maxCategoryCount) * 100}%`,
-                            background: cat.includes("Food") ? 'linear-gradient(90deg, #f59e0b, #ef4444)' :
-                              cat.includes("Infra") ? 'linear-gradient(90deg, #3b82f6, #8b5cf6)' :
-                                cat.includes("Internet") ? 'linear-gradient(90deg, #06b6d4, #3b82f6)' :
-                                  cat.includes("Safety") ? 'linear-gradient(90deg, #ef4444, #f59e0b)' :
-                                    'linear-gradient(90deg, var(--primary), var(--accent-purple))'
-                          }}
-                        ></div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Branch Breakdown */}
+              <div className="category-card">
+                <div className="section-header">
+                  <h3>📍 Branch Wise Feedback</h3>
+                </div>
+                <div className="category-list">
+                  {BRANCH_OPTIONS.map(b => {
+                    const count = branchCounts[b] || 0;
+                    return (
+                      <div key={b} className="category-bar-item">
+                        <div className="category-bar-label">
+                          <span className="category-name">📍 {b}</span>
+                          <span className="category-count">{count}</span>
+                        </div>
+                        <div className="progress-track-admin">
+                          <div
+                            className="progress-fill-admin"
+                            style={{ width: `${(count / maxBranch) * 100}%`, background: 'linear-gradient(90deg, #cc1111, #ff4444)' }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Star Rating Distribution */}
+              <div className="category-card">
+                <div className="section-header">
+                  <h3>⭐ Rating Distribution</h3>
+                </div>
+                <div className="category-list">
+                  {[5, 4, 3, 2, 1].map(star => {
+                    const count = feedbacks.filter(f => f.starRating === star).length;
+                    return (
+                      <div key={star} className="category-bar-item">
+                        <div className="category-bar-label">
+                          <span className="category-name" style={{ color: '#f59e0b' }}>
+                            {'★'.repeat(star)} <span style={{ color: '#8585a0', fontWeight: 400 }}>{star} star</span>
+                          </span>
+                          <span className="category-count">{count}</span>
+                        </div>
+                        <div className="progress-track-admin">
+                          <div
+                            className="progress-fill-admin"
+                            style={{ width: `${(count / Math.max(total, 1)) * 100}%`, background: 'linear-gradient(90deg, #f59e0b, #fcd34d)' }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* Right Side: Feed of Submissions */}
+            {/* Right: Feedback Feed */}
             <div className="feed-column">
+
+              {/* Filters */}
               <div className="feed-filters-bar">
                 <div className="filter-group">
                   <span className="filter-label">Search:</span>
                   <input
                     type="text"
                     className="select-filter"
-                    placeholder="Search description..."
+                    placeholder="Name, ID, text..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    style={{ width: '150px' }}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    style={{ width: 140 }}
                   />
                 </div>
-
                 <div className="filter-group">
-                  <span className="filter-label">Category:</span>
-                  <select
-                    className="select-filter"
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                  >
-                    <option value="All">All Categories</option>
-                    {problemOptions.map(cat => (
-                      <option key={cat} value={cat}>{cat.split(" (")[0]}</option>
-                    ))}
+                  <span className="filter-label">Branch:</span>
+                  <select className="select-filter" value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
+                    <option value="All">All Branches</option>
+                    {BRANCH_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
-
-                {(categoryFilter !== 'All' || searchQuery) && (
-                  <button
-                    className="reset-filters-btn"
-                    onClick={() => {
-                      setCategoryFilter('All');
-                      setSearchQuery('');
-                    }}
-                  >
-                    Clear Filters
-                  </button>
+                <div className="filter-group">
+                  <span className="filter-label">Category:</span>
+                  <select className="select-filter" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                    <option value="All">All Categories</option>
+                    {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <span className="filter-label">Status:</span>
+                  <select className="select-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                    <option value="All">All Status</option>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <span className="filter-label">Rating:</span>
+                  <select className="select-filter" value={ratingFilter} onChange={e => setRatingFilter(e.target.value)}>
+                    <option value="All">All Ratings</option>
+                    {RATING_OPTIONS.map(r => <option key={r} value={r}>{r} ★</option>)}
+                  </select>
+                </div>
+                {hasFilters && (
+                  <button className="reset-filters-btn" onClick={clearFilters}>✕ Clear</button>
                 )}
               </div>
 
-              {/* Submissions Cards */}
+              {/* Cards */}
               <div className="responses-feed">
-                {filteredFeedbacks.length === 0 ? (
+                {filtered.length === 0 ? (
                   <div className="no-records">
-                    No response logs match the current filters. Try relaxing filters or submitting a response!
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
+                    No feedback matches the current filters.
+                    <br />
+                    <button className="reset-filters-btn" style={{ marginTop: 12 }} onClick={clearFilters}>
+                      Clear Filters
+                    </button>
                   </div>
                 ) : (
-                  filteredFeedbacks.map(item => (
-                    <div
-                      key={item.id}
-                      className="response-feed-card"
-                      onClick={() => setSelectedFeedback(item)}
-                      style={{
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        borderLeft: '4px solid transparent'
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.borderLeftColor = '#6366f1';
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.borderLeftColor = 'transparent';
-                      }}
-                    >
-                      <div className="response-header">
-                        <div className="tags-row">
-                          {item.problems.map(prob => (
-                            <span key={prob} className="badge problem-tag">{prob.split(" (")[0]}</span>
-                          ))}
+                  filtered.map(item => {
+                    const cat    = item.feedbackCategory || (item.problems && item.problems[0]) || 'Other';
+                    const branch = item.branch || item.department || '';
+                    const name   = item.studentName || item.name || 'Anonymous';
+                    const text   = item.mainFeedback || item.description || '';
+                    const fid    = item.feedbackId || item.id;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="response-feed-card"
+                        onClick={() => setSelectedFeedback(item)}
+                      >
+                        <div className="response-header">
+                          <div className="tags-row">
+                            <span className={`badge ${getCategoryBadgeClass(cat)}`}>
+                              {getCategoryIcon(cat)} {cat}
+                            </span>
+                            {branch && (
+                              <span className="badge branch-badge">📍 {branch}</span>
+                            )}
+                            <span className={`badge ${getStatusBadgeClass(item.status)}`}>
+                              {item.status || 'New'}
+                            </span>
+                          </div>
+                          <span className="date-badge">
+                            {new Date(item.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
                         </div>
-                        <span className="date-badge">{new Date(item.timestamp).toLocaleDateString()}</span>
-                      </div>
 
-                      <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: '#94a3b8', margin: '4px 0 10px 0', alignItems: 'center' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          👤 <strong>{item.name || 'Anonymous'}</strong>
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          🏢 {item.department || 'N/A'}
-                        </span>
-                      </div>
-
-                      <p className="response-card-description">{item.description}</p>
-
-                      <div className="response-footer">
-                        <div className="response-footer-left">
-                          <span><strong>Frequency:</strong> {item.frequency}</span>
-                          <span><strong>Target Users:</strong> {item.userGroup}</span>
+                        <div style={{ display: 'flex', gap: 12, fontSize: '0.82rem', color: '#8585a0', alignItems: 'center' }}>
+                          <span>👤 <strong style={{ color: '#0f0f3d' }}>{name}</strong></span>
+                          {item.starRating > 0 && (
+                            <span className="star-display">{renderStars(item.starRating)}</span>
+                          )}
+                          <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 11, color: '#2d2db0', fontWeight: 600 }}>
+                            {fid}
+                          </span>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadResponsePDF(item);
-                            }}
-                            className="reset-filters-btn"
-                            style={{
-                              background: 'rgba(99, 102, 241, 0.1)',
-                              color: '#818cf8',
-                              border: '1px solid rgba(99, 102, 241, 0.2)',
-                              padding: '6px 12px',
-                              borderRadius: '6px',
-                              fontSize: '0.8rem',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseOver={(e) => {
-                              e.currentTarget.style.background = '#6366f1';
-                              e.currentTarget.style.color = '#fff';
-                            }}
-                            onMouseOut={(e) => {
-                              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
-                              e.currentTarget.style.color = '#818cf8';
-                            }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                              <polyline points="7 10 12 15 17 10"></polyline>
-                              <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Print / PDF
-                          </button>
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteFeedback(item.id);
-                            }}
-                            className="reset-filters-btn"
-                            style={{
-                              background: deletingId === item.id ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
-                              color: '#ef4444',
-                              border: deletingId === item.id ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(239, 68, 68, 0.2)',
-                              padding: '6px 12px',
-                              borderRadius: '6px',
-                              fontSize: '0.8rem',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseOver={(e) => {
-                              e.currentTarget.style.background = '#ef4444';
-                              e.currentTarget.style.color = '#fff';
-                            }}
-                            onMouseOut={(e) => {
-                              if (deletingId === item.id) {
-                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
-                                e.currentTarget.style.color = '#ef4444';
-                              } else {
-                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                                e.currentTarget.style.color = '#ef4444';
-                              }
-                            }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <polyline points="3 6 5 6 21 6"></polyline>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                            {deletingId === item.id ? 'Confirm Delete?' : 'Delete'}
-                          </button>
+                        <p className="response-card-description">{text || '(No text)'}</p>
+
+                        <div className="response-footer">
+                          <div className="response-footer-left">
+                            {item.recommend && <span>Recommend: <strong>{item.recommend}</strong></span>}
+                            {item.improvementAreas?.length > 0 && (
+                              <span>Areas: {item.improvementAreas.slice(0, 2).join(', ')}{item.improvementAreas.length > 2 ? '…' : ''}</span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              className="btn-details"
+                              onClick={e => { e.stopPropagation(); setSelectedFeedback(item); }}
+                            >
+                              View Details
+                            </button>
+                            <button
+                              className={`btn-delete${deletingId === item.id ? ' deleting-confirm' : ''}`}
+                              style={deletingId === item.id ? { background: 'var(--kfa-red)', color: 'white', borderColor: 'var(--kfa-red)' } : {}}
+                              onClick={e => { e.stopPropagation(); deleteFeedback(item.id); }}
+                            >
+                              {deletingId === item.id ? '⚠ Confirm?' : '🗑 Delete'}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -588,171 +502,134 @@ function Admin() {
         </div>
       </main>
 
-      {/* Details Modal */}
-      {selectedFeedback && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 99999,
-            padding: '16px',
-            boxSizing: 'border-box',
-            animation: 'fadeIn 0.2s ease'
-          }}
-          onClick={() => setSelectedFeedback(null)}
-        >
-          <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '16px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '600px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-              border: '1px solid #f1f5f9',
-              fontFamily: "'Outfit', sans-serif",
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f2d59', fontWeight: 700 }}>Review Details</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>Response ID: {selectedFeedback.id}</p>
-              </div>
-              <button
-                onClick={() => setSelectedFeedback(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '1.5rem',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                &times;
-              </button>
-            </div>
+      {/* Detail Modal */}
+      {selectedFeedback && (() => {
+        const f   = selectedFeedback;
+        const cat = f.feedbackCategory || (f.problems && f.problems[0]) || 'Other';
+        const name= f.studentName || f.name || 'Anonymous';
+        const fid = f.feedbackId || f.id;
 
-            {/* Modal Body */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '0.9rem', color: '#334155' }}>
-              {/* Profile info */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                <div><strong>Name:</strong> {selectedFeedback.name || 'Anonymous'}</div>
-                <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}><strong>Department:</strong> {selectedFeedback.department || 'N/A'}</div>
-                <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}><strong>Date Logged:</strong> {new Date(selectedFeedback.timestamp).toLocaleString()}</div>
-              </div>
+        return (
+          <div className="admin-modal-overlay" onClick={() => setSelectedFeedback(null)}>
+            <div className="admin-modal-box" onClick={e => e.stopPropagation()}>
 
-              {/* Problems Tags */}
-              <div>
-                <strong style={{ display: 'block', marginBottom: '6px', color: '#0f2d59' }}>Problem Type(s):</strong>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {selectedFeedback.problems.map(prob => (
-                    <span key={prob} className="badge problem-tag" style={{ margin: 0 }}>{prob}</span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grid of properties */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+              {/* Modal Header */}
+              <div className="admin-modal-header">
                 <div>
-                  <strong style={{ color: '#0f2d59' }}>Recurrence:</strong>
-                  <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{selectedFeedback.frequency}</p>
+                  <h3>Feedback Details</h3>
+                  <p>{fid} • {new Date(f.timestamp).toLocaleString('en-IN')}</p>
                 </div>
-                <div>
-                  <strong style={{ color: '#0f2d59' }}>Who is Affected:</strong>
-                  <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{selectedFeedback.affected}</p>
-                </div>
-                <div>
-                  <strong style={{ color: '#0f2d59' }}>End Users:</strong>
-                  <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{selectedFeedback.userGroup}</p>
-                </div>
-                <div>
-                  <strong style={{ color: '#0f2d59' }}>Digital Tool Help:</strong>
-                  <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{selectedFeedback.digitalToolHelp || 'N/A'}</p>
-                </div>
+                <button className="modal-close-btn" onClick={() => setSelectedFeedback(null)}>×</button>
               </div>
 
-              {selectedFeedback.digitalToolTypes && selectedFeedback.digitalToolTypes.length > 0 && (
-                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
-                  <strong style={{ color: '#0f2d59', display: 'block', marginBottom: '4px' }}>Suggested Systems:</strong>
-                  <span style={{ color: '#6366f1', fontWeight: 600 }}>{selectedFeedback.digitalToolTypes.join(', ')}</span>
-                </div>
-              )}
+              {/* Modal Body */}
+              <div className="admin-modal-body">
 
-              {/* Description */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
-                <strong style={{ color: '#0f2d59', display: 'block', marginBottom: '6px' }}>Problem Description:</strong>
-                <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', borderLeft: '4px solid #0f2d59', borderTop: '1px solid #cbd5e1', borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', whiteSpace: 'pre-wrap', lineHeight: 1.5, color: '#1e293b' }}>
-                  {selectedFeedback.description}
+                {/* Info Grid */}
+                <div className="modal-info-grid">
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Feedback ID</span>
+                    <span className="modal-info-value" style={{ fontFamily: 'monospace', color: '#1a1a8c' }}>{fid}</span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Student Name</span>
+                    <span className="modal-info-value">{name}</span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Branch</span>
+                    <span className="modal-info-value">📍 {f.branch || f.department || '—'}</span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Category</span>
+                    <span className="modal-info-value">
+                      <span className={`badge ${getCategoryBadgeClass(cat)}`}>{getCategoryIcon(cat)} {cat}</span>
+                    </span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Star Rating</span>
+                    <span className="modal-info-value" style={{ color: '#f59e0b' }}>
+                      {f.starRating ? renderStars(f.starRating) + ` (${f.starRating}/5)` : '—'}
+                    </span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Status</span>
+                    <span className="modal-info-value">
+                      <span className={`badge ${getStatusBadgeClass(f.status)}`}>{f.status || 'New'}</span>
+                    </span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Recommend KFA</span>
+                    <span className="modal-info-value">{f.recommend || '—'}</span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Child Progress</span>
+                    <span className="modal-info-value">{f.learningProgress || '—'}</span>
+                  </div>
+                  <div className="modal-info-item">
+                    <span className="modal-info-label">Contact Preference</span>
+                    <span className="modal-info-value">
+                      {f.contactPreference === 'Yes' ? `📞 ${f.phoneNumber || ''} (${f.preferredContactMethod || 'Call'})` : (f.contactPreference || '—')}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Main Feedback */}
+                {(f.mainFeedback || f.description) && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#8585a0', marginBottom: 6 }}>
+                      Main Feedback
+                    </div>
+                    <div className="modal-text-block">{f.mainFeedback || f.description}</div>
+                  </div>
+                )}
+
+                {/* Improvement Areas */}
+                {f.improvementAreas?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#8585a0', marginBottom: 8 }}>
+                      Improvement Areas Requested
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {f.improvementAreas.map(area => (
+                        <span key={area} style={{ padding: '5px 12px', background: 'rgba(26,26,140,0.07)', color: '#1a1a8c', borderRadius: 20, fontSize: 12, fontWeight: 600, border: '1px solid rgba(26,26,140,0.15)' }}>
+                          {area}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Expectations */}
+                {f.expectations && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#8585a0', marginBottom: 6 }}>
+                      Parent Expectations
+                    </div>
+                    <div className="modal-text-block" style={{ borderLeftColor: '#cc1111' }}>{f.expectations}</div>
+                  </div>
+                )}
+
+                {/* Additional Comments */}
+                {f.additionalComments && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#8585a0', marginBottom: 6 }}>
+                      Additional Comments
+                    </div>
+                    <div className="modal-text-block" style={{ borderLeftColor: '#16a34a' }}>{f.additionalComments}</div>
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-              <button
-                type="button"
-                onClick={() => setSelectedFeedback(null)}
-                style={{
-                  background: '#f1f5f9',
-                  color: '#64748b',
-                  border: 'none',
-                  padding: '10px 16px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '0.875rem'
-                }}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadResponsePDF(selectedFeedback)}
-                style={{
-                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '0.875rem',
-                  boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Download PDF
-              </button>
+              {/* Footer */}
+              <div className="modal-footer">
+                <button className="modal-btn-close" onClick={() => setSelectedFeedback(null)}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
